@@ -42,6 +42,7 @@ import org.frknkrc44.hma_oss.zygote.hook.InstallerHookTarget29
 import org.frknkrc44.hma_oss.zygote.hook.InstallerHookTarget30
 import org.frknkrc44.hma_oss.zygote.hook.InstallerHookTarget33
 import org.frknkrc44.hma_oss.zygote.hook.InstallerHookTarget34
+import org.frknkrc44.hma_oss.zygote.hook.PermissionHook
 import org.frknkrc44.hma_oss.zygote.hook.PmsHookTarget29
 import org.frknkrc44.hma_oss.zygote.hook.PmsHookTarget30
 import org.frknkrc44.hma_oss.zygote.hook.PmsHookTarget31
