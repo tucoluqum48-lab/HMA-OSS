@@ -12,16 +12,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
+      - name: Prepare local.properties
+        run: |
+          cat > local.properties <<'EOF'
+          sdk.dir=/usr/local/lib/android/sdk
+          officialBuild=false
+          EOF
+          cat local.properties
       - name: Build
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug --no-daemon
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: HMA-OSS-debug
