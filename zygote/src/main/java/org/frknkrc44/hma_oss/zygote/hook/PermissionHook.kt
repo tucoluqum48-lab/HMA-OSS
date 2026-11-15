@@ -3,17 +3,14 @@ package org.frknkrc44.hma_oss.zygote.hook
 import android.content.pm.PackageManager
 import android.os.Binder
 import android.util.Log
-import icu.nullptr.hidemyapplist.common.Constants
 import org.frknkrc44.hma_oss.zygote.util.ZLUtils.getArgument
-import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * 权限查询隔离（v5）
+ * 权限查询隔离（v7，带诊断日志）
  *
- * android.permission.PermissionManager.checkPermission 是客户端静态方法（跑在调用方进程），
- * 真正判定在 system_server 的 com.android.server.pm.permission.PermissionManagerService#checkPermission。
- * 本 hook 注册在 system_server，因此挂服务端方法。
+ * 判断：目标 uid 在隐藏表里且不是自查 → 返回 DENIED
+ * 日志：uid>=10000 的调用逐条记录（限 400 条），用于定位检测方查询了什么
  */
 class PermissionHook : IFrameworkHook {
     override val TAG = "PermissionHook"
@@ -21,61 +18,73 @@ class PermissionHook : IFrameworkHook {
     private val uidToPkg = HashMap<Int, String>()
     private val lastBuild = AtomicLong(0L)
     private val denyCount = AtomicLong(0L)
+    private val logCount = AtomicLong(0L)
 
     override fun load() {
-        // 落盘标记：确认 load() 到底有没有被执行（日志可能被级别/缓冲吞掉）
         try {
-            java.io.File("/data/misc/permhook_v6.txt")
+            java.io.File("/data/misc/permhook_v7.txt")
                 .writeText("loaded at " + System.currentTimeMillis() + "\n")
         } catch (t: Throwable) {
         }
-        dumpCandidates("com.android.server.pm.permission.PermissionManagerService")
-        dumpCandidates("com.android.server.am.ActivityManagerService")
-        dumpCandidates("android.permission.PermissionManager")
 
-        hookOne("com.android.server.pm.permission.PermissionManagerService")
-        hookOne("com.android.server.am.ActivityManagerService")
-        Log.i(TAG, "hook install finished")
+        hook3("com.android.server.pm.permission.PermissionManagerService")
+        hook2("com.android.server.pm.permission.PermissionManagerService")
+        hook3("com.android.server.am.ActivityManagerService")
+        hook3("android.permission.PermissionManager")
+        Log.i(TAG, "v7 install done")
     }
 
-    private fun hookOne(clazz: String) {
+    private fun hook3(clazz: String) {
         try {
             hooker.apply {
                 hookBefore(clazz, "checkPermission", 3) { methodName, frame, returnValue ->
-                    val targetUid = frame.getArgument(2) as? Int ?: return@hookBefore
-                    if (targetUid < 10000) return@hookBefore
-
-                    ensureMap()
-                    val targetApp = synchronized(uidToPkg) { uidToPkg[targetUid] }
-                        ?: return@hookBefore
-
-                    val callingUid = Binder.getCallingUid()
-                    if (callingUid == targetUid) return@hookBefore
-
-                    returnValue.result = PackageManager.PERMISSION_DENIED
-                    val n = denyCount.incrementAndGet()
-                    if (n <= 5 || n % 100L == 0L) {
-                        Log.i(TAG, "@$methodName DENY #$n target=$targetApp($targetUid) caller=$callingUid")
+                    val uid = frame.getArgument(2) as? Int ?: return@hookBefore
+                    if (uid >= 10000) {
+                        ensureMap()
+                        val app = synchronized(uidToPkg) { uidToPkg[uid] }
+                        val caller = try { Binder.getCallingUid() } catch (t: Throwable) { -1 }
+                        val n = logCount.incrementAndGet()
+                        if (n <= 400) {
+                            Log.i(TAG, "@$methodName uid=$uid inMap=${app != null} caller=$caller app=$app")
+                        }
+                        if (app != null && caller != uid) {
+                            returnValue.result = PackageManager.PERMISSION_DENIED
+                            val d = denyCount.incrementAndGet()
+                            if (d <= 10 || d % 100L == 0L) Log.i(TAG, "DENY #$d $app($uid)")
+                        }
                     }
                 }
             }
-            Log.i(TAG, "hooked $clazz")
+            Log.i(TAG, "hooked3 $clazz")
         } catch (t: Throwable) {
-            Log.i(TAG, "hook $clazz failed: $t")
+            Log.i(TAG, "hook3 $clazz failed: $t")
         }
     }
 
-    private fun dumpCandidates(clazz: String) {
+    private fun hook2(clazz: String) {
         try {
-            val cls = Class.forName(clazz)
-            val found: List<Method> = cls.declaredMethods.filter { it.name.contains("checkPermission") }
-            if (found.isEmpty()) {
-                Log.i(TAG, "$clazz: no checkPermission")
-            } else {
-                found.forEach { m -> Log.i(TAG, "$clazz -> (${m.parameterTypes.joinToString(",")})") }
+            hooker.apply {
+                hookBefore(clazz, "checkUidPermission", 2) { methodName, frame, returnValue ->
+                    val uid = frame.getArgument(1) as? Int ?: return@hookBefore
+                    if (uid >= 10000) {
+                        ensureMap()
+                        val app = synchronized(uidToPkg) { uidToPkg[uid] }
+                        val caller = try { Binder.getCallingUid() } catch (t: Throwable) { -1 }
+                        val n = logCount.incrementAndGet()
+                        if (n <= 400) {
+                            Log.i(TAG, "@$methodName uid=$uid inMap=${app != null} caller=$caller app=$app")
+                        }
+                        if (app != null && caller != uid) {
+                            returnValue.result = PackageManager.PERMISSION_DENIED
+                            val d = denyCount.incrementAndGet()
+                            if (d <= 10 || d % 100L == 0L) Log.i(TAG, "DENY #$d $app($uid)")
+                        }
+                    }
+                }
             }
+            Log.i(TAG, "hooked2 $clazz")
         } catch (t: Throwable) {
-            Log.i(TAG, "$clazz: load failed")
+            Log.i(TAG, "hook2 $clazz failed: $t")
         }
     }
 
@@ -84,7 +93,6 @@ class PermissionHook : IFrameworkHook {
         val last = lastBuild.get()
         if (now - last < 60_000L) return
         if (!lastBuild.compareAndSet(last, now)) return
-
         try {
             val names = HashSet<String>()
             config.templates.values.forEach { names.addAll(it.appList) }
@@ -104,9 +112,9 @@ class PermissionHook : IFrameworkHook {
                 uidToPkg.clear()
                 uidToPkg.putAll(fresh)
             }
-            Log.i(TAG, "uid map: ${fresh.size} entries from ${names.size} names")
+            Log.i(TAG, "uid map: ${fresh.size} entries")
         } catch (t: Throwable) {
-            Log.i(TAG, "uid map rebuild failed: $t")
+            Log.i(TAG, "uid map failed: $t")
         }
     }
 }
