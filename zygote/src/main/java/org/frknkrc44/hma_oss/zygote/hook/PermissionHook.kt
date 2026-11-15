@@ -4,6 +4,7 @@ import android.content.pm.PackageManager
 import android.os.Binder
 import icu.nullptr.hidemyapplist.common.Constants
 import org.frknkrc44.hma_oss.zygote.util.Logcat.logD
+import org.frknkrc44.hma_oss.zygote.util.ZLUtils.getArgument
 import java.util.concurrent.atomic.AtomicLong
 
 /**
