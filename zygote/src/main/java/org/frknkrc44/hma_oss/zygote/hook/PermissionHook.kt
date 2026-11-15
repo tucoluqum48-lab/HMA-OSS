@@ -20,10 +20,17 @@ class PermissionHook : IFrameworkHook {
     private val denyCount = AtomicLong(0L)
     private val logCount = AtomicLong(0L)
 
+    private fun flog(msg: String) {
+        try {
+            java.io.File("/data/misc/permhook_v8.log")
+                .appendText(System.currentTimeMillis().toString() + " " + msg + "\n")
+        } catch (t: Throwable) {
+        }
+    }
+
     override fun load() {
         try {
-            java.io.File("/data/misc/permhook_v7.txt")
-                .writeText("loaded at " + System.currentTimeMillis() + "\n")
+            java.io.File("/data/misc/permhook_v8.log").writeText("loaded\n")
         } catch (t: Throwable) {
         }
 
@@ -31,7 +38,7 @@ class PermissionHook : IFrameworkHook {
         hook2("com.android.server.pm.permission.PermissionManagerService")
         hook3("com.android.server.am.ActivityManagerService")
         hook3("android.permission.PermissionManager")
-        Log.i(TAG, "v7 install done")
+        flog("v8 install done")
     }
 
     private fun hook3(clazz: String) {
@@ -45,19 +52,19 @@ class PermissionHook : IFrameworkHook {
                         val caller = try { Binder.getCallingUid() } catch (t: Throwable) { -1 }
                         val n = logCount.incrementAndGet()
                         if (n <= 400) {
-                            Log.i(TAG, "@$methodName uid=$uid inMap=${app != null} caller=$caller app=$app")
+                            flog("@$methodName uid=$uid inMap=${app != null} caller=$caller app=$app")
                         }
                         if (app != null && caller != uid) {
                             returnValue.result = PackageManager.PERMISSION_DENIED
                             val d = denyCount.incrementAndGet()
-                            if (d <= 10 || d % 100L == 0L) Log.i(TAG, "DENY #$d $app($uid)")
+                            if (d <= 10 || d % 100L == 0L) flog("DENY #$d $app($uid)")
                         }
                     }
                 }
             }
-            Log.i(TAG, "hooked3 $clazz")
+            flog("hooked3 $clazz")
         } catch (t: Throwable) {
-            Log.i(TAG, "hook3 $clazz failed: $t")
+            flog("hook3 $clazz FAILED: $t")
         }
     }
 
@@ -72,19 +79,19 @@ class PermissionHook : IFrameworkHook {
                         val caller = try { Binder.getCallingUid() } catch (t: Throwable) { -1 }
                         val n = logCount.incrementAndGet()
                         if (n <= 400) {
-                            Log.i(TAG, "@$methodName uid=$uid inMap=${app != null} caller=$caller app=$app")
+                            flog("@$methodName uid=$uid inMap=${app != null} caller=$caller app=$app")
                         }
                         if (app != null && caller != uid) {
                             returnValue.result = PackageManager.PERMISSION_DENIED
                             val d = denyCount.incrementAndGet()
-                            if (d <= 10 || d % 100L == 0L) Log.i(TAG, "DENY #$d $app($uid)")
+                            if (d <= 10 || d % 100L == 0L) flog("DENY #$d $app($uid)")
                         }
                     }
                 }
             }
-            Log.i(TAG, "hooked2 $clazz")
+            flog("hooked2 $clazz")
         } catch (t: Throwable) {
-            Log.i(TAG, "hook2 $clazz failed: $t")
+            flog("hook2 $clazz FAILED: $t")
         }
     }
 
@@ -112,9 +119,9 @@ class PermissionHook : IFrameworkHook {
                 uidToPkg.clear()
                 uidToPkg.putAll(fresh)
             }
-            Log.i(TAG, "uid map: ${fresh.size} entries")
+            flog("uid map: ${fresh.size} entries")
         } catch (t: Throwable) {
-            Log.i(TAG, "uid map failed: $t")
+            flog("uid map failed: $t")
         }
     }
 }
