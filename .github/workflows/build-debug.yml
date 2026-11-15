@@ -23,11 +23,20 @@ jobs:
         run: |
           printf 'sdk.dir=/usr/local/lib/android/sdk\nofficialBuild=false\n' > local.properties
           cat local.properties
-      - name: Build
+      - name: Prebuild
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+          ./gradlew prebuild --no-daemon
+      - name: Build app + module
+        run: |
+          ./gradlew :app:assemble :zygote:assemble --no-daemon --stacktrace
+      - name: List outputs
+        run: |
+          find zygote/build/outputs -name '*.zip' 2>/dev/null | head
+          find app/build/outputs -name '*.apk' 2>/dev/null | head
       - uses: actions/upload-artifact@v4
         with:
-          name: HMA-OSS-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: HMA-module
+          path: |
+            zygote/build/outputs/magisk/**/*.zip
+            app/build/outputs/apk/**/*.apk
