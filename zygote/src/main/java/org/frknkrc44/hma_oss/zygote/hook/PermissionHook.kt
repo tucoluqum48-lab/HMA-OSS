@@ -23,6 +23,12 @@ class PermissionHook : IFrameworkHook {
     private val denyCount = AtomicLong(0L)
 
     override fun load() {
+        // 落盘标记：确认 load() 到底有没有被执行（日志可能被级别/缓冲吞掉）
+        try {
+            java.io.File("/data/misc/permhook_v6.txt")
+                .writeText("loaded at " + System.currentTimeMillis() + "\n")
+        } catch (t: Throwable) {
+        }
         dumpCandidates("com.android.server.pm.permission.PermissionManagerService")
         dumpCandidates("com.android.server.am.ActivityManagerService")
         dumpCandidates("android.permission.PermissionManager")
