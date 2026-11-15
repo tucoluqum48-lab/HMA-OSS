@@ -9,12 +9,11 @@ import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * 权限查询隔离（v3）：
- * 被隐藏的包，checkPermission(perm, pid, uid) 也应返回 DENIED，
- * 否则「包名查不到 / 权限却有」就是一条可枚举的泄漏。
+ * 权限查询隔离（v5）
  *
- * 与 v2 的区别：不再依赖调用方包名解析，只看被查询 uid 是否在隐藏表里。
- * 唯一例外是「自己查自己」（hidden app 自查权限必须正常）。
+ * android.permission.PermissionManager.checkPermission 是客户端静态方法（跑在调用方进程），
+ * 真正判定在 system_server 的 com.android.server.pm.permission.PermissionManagerService#checkPermission。
+ * 本 hook 注册在 system_server，因此挂服务端方法。
  */
 class PermissionHook : IFrameworkHook {
     override val TAG = "PermissionHook"
@@ -24,56 +23,56 @@ class PermissionHook : IFrameworkHook {
     private val denyCount = AtomicLong(0L)
 
     override fun load() {
-        dumpCheckPermissionMethods()
+        dumpCandidates("com.android.server.pm.permission.PermissionManagerService")
+        dumpCandidates("com.android.server.am.ActivityManagerService")
+        dumpCandidates("android.permission.PermissionManager")
 
-        hooker.apply {
-            hookBefore(
-                "android.permission.PermissionManager",
-                "checkPermission",
-                3,
-            ) { methodName, frame, returnValue ->
-                val targetUid = frame.getArgument(2) as? Int ?: return@hookBefore
-                if (targetUid < 10000) return@hookBefore
-
-                ensureMap()
-
-                val targetApp = synchronized(uidToPkg) { uidToPkg[targetUid] } ?: return@hookBefore
-
-                val callingUid = Binder.getCallingUid()
-                if (callingUid == targetUid) return@hookBefore          // 自查放行
-                if (callingUid == Constants.UID_SYSTEM) {
-                    // system_server 内部调用（clearCallingIdentity 之后）：同样拦截
-                }
-
-                returnValue.result = PackageManager.PERMISSION_DENIED
-                val n = denyCount.incrementAndGet()
-                if (n <= 5 || n % 50L == 0L) {
-                    Log.i(TAG, "@$methodName DENY #$n target=$targetApp($targetUid) caller=$callingUid")
-                }
-            }
-        }
-        Log.i(TAG, "checkPermission hook installed")
+        hookOne("com.android.server.pm.permission.PermissionManagerService")
+        hookOne("com.android.server.am.ActivityManagerService")
+        Log.i(TAG, "hook install finished")
     }
 
-    /** 把类里所有 checkPermission 方法打出来，确认签名是否匹配 */
-    private fun dumpCheckPermissionMethods() {
+    private fun hookOne(clazz: String) {
         try {
-            val cls = Class.forName("android.permission.PermissionManager")
-            val ms: Array<Method> = cls.declaredMethods
-            val found = ms.filter { it.name.contains("checkPermission") }
-            if (found.isEmpty()) {
-                Log.i(TAG, "NO checkPermission method on PermissionManager!")
-            } else {
-                found.forEach { m ->
-                    Log.i(TAG, "candidate: ${m.parameterTypes.joinToString(",")} -> ${m.returnType}")
+            hooker.apply {
+                hookBefore(clazz, "checkPermission", 3) { methodName, frame, returnValue ->
+                    val targetUid = frame.getArgument(2) as? Int ?: return@hookBefore
+                    if (targetUid < 10000) return@hookBefore
+
+                    ensureMap()
+                    val targetApp = synchronized(uidToPkg) { uidToPkg[targetUid] }
+                        ?: return@hookBefore
+
+                    val callingUid = Binder.getCallingUid()
+                    if (callingUid == targetUid) return@hookBefore
+
+                    returnValue.result = PackageManager.PERMISSION_DENIED
+                    val n = denyCount.incrementAndGet()
+                    if (n <= 5 || n % 100L == 0L) {
+                        Log.i(TAG, "@$methodName DENY #$n target=$targetApp($targetUid) caller=$callingUid")
+                    }
                 }
+            }
+            Log.i(TAG, "hooked $clazz")
+        } catch (t: Throwable) {
+            Log.i(TAG, "hook $clazz failed: $t")
+        }
+    }
+
+    private fun dumpCandidates(clazz: String) {
+        try {
+            val cls = Class.forName(clazz)
+            val found: List<Method> = cls.declaredMethods.filter { it.name.contains("checkPermission") }
+            if (found.isEmpty()) {
+                Log.i(TAG, "$clazz: no checkPermission")
+            } else {
+                found.forEach { m -> Log.i(TAG, "$clazz -> (${m.parameterTypes.joinToString(",")})") }
             }
         } catch (t: Throwable) {
-            Log.i(TAG, "dump methods failed: $t")
+            Log.i(TAG, "$clazz: load failed")
         }
     }
 
-    /** 每 60 秒最多重建一次（配置可能被改） */
     private fun ensureMap() {
         val now = System.currentTimeMillis()
         val last = lastBuild.get()
@@ -87,7 +86,6 @@ class PermissionHook : IFrameworkHook {
                 names.addAll(it.extraAppList)
                 names.addAll(it.extraOppositeAppList)
             }
-
             val fresh = HashMap<Int, String>(names.size)
             names.forEach { p ->
                 try {
