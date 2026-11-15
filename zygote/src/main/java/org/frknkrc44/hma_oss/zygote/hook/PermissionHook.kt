@@ -2,8 +2,8 @@ package org.frknkrc44.hma_oss.zygote.hook
 
 import android.content.pm.PackageManager
 import android.os.Binder
+import android.util.Log
 import icu.nullptr.hidemyapplist.common.Constants
-import org.frknkrc44.hma_oss.zygote.util.Logcat.logD
 import org.frknkrc44.hma_oss.zygote.util.ZLUtils.getArgument
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicLong
@@ -48,11 +48,11 @@ class PermissionHook : IFrameworkHook {
                 returnValue.result = PackageManager.PERMISSION_DENIED
                 val n = denyCount.incrementAndGet()
                 if (n <= 5 || n % 50L == 0L) {
-                    logD(TAG) { "@$methodName DENY #$n target=$targetApp($targetUid) caller=$callingUid" }
+                    Log.i(TAG, "@$methodName DENY #$n target=$targetApp($targetUid) caller=$callingUid")
                 }
             }
         }
-        logD(TAG) { "checkPermission hook installed" }
+        Log.i(TAG, "checkPermission hook installed")
     }
 
     /** 把类里所有 checkPermission 方法打出来，确认签名是否匹配 */
@@ -62,14 +62,14 @@ class PermissionHook : IFrameworkHook {
             val ms: Array<Method> = cls.declaredMethods
             val found = ms.filter { it.name.contains("checkPermission") }
             if (found.isEmpty()) {
-                logD(TAG) { "NO checkPermission method on PermissionManager!" }
+                Log.i(TAG, "NO checkPermission method on PermissionManager!")
             } else {
                 found.forEach { m ->
-                    logD(TAG) { "candidate: ${m.parameterTypes.joinToString(",")} -> ${m.returnType}" }
+                    Log.i(TAG, "candidate: ${m.parameterTypes.joinToString(",")} -> ${m.returnType}")
                 }
             }
         } catch (t: Throwable) {
-            logD(TAG, t) { "dump methods failed" }
+            Log.i(TAG, "dump methods failed: $t")
         }
     }
 
@@ -100,9 +100,9 @@ class PermissionHook : IFrameworkHook {
                 uidToPkg.clear()
                 uidToPkg.putAll(fresh)
             }
-            logD(TAG) { "uid map: ${fresh.size} entries from ${names.size} names" }
+            Log.i(TAG, "uid map: ${fresh.size} entries from ${names.size} names")
         } catch (t: Throwable) {
-            logD(TAG, t) { "uid map rebuild failed" }
+            Log.i(TAG, "uid map rebuild failed: $t")
         }
     }
 }
