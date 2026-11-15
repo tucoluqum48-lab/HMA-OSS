@@ -4,6 +4,7 @@ import android.content.pm.PackageManager
 import icu.nullptr.hidemyapplist.common.Constants
 import org.frknkrc44.hma_oss.zygote.util.Logcat.logD
 import org.frknkrc44.hma_oss.zygote.util.ServiceUtils
+import org.frknkrc44.hma_oss.zygote.util.ZLUtils.getArgument
 
 /**
  * 权限查询隔离：
